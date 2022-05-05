@@ -60,7 +60,7 @@ void child_process(int _pipe[]) {
         }
     } else {
         // 子进程
-        close(_pipe[0]);
+        close(_pipe[0]); // 关闭左通道读端
         child_process(child_pipe);
     }
 }
