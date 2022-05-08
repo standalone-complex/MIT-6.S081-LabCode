@@ -1,5 +1,15 @@
 {
     "files.associations": {
-        "user.h": "c"
+        "user.h": "c",
+        "sysinfo.h": "c",
+        "proc.h": "c",
+        "riscv.h": "c",
+        "param.h": "c",
+        "file.h": "c",
+        "stat.h": "c",
+        "sleeplock.h": "c",
+        "spinlock.h": "c",
+        "defs.h": "c",
+        "types.h": "c"
     }
 }
