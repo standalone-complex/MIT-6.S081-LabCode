@@ -472,3 +472,5 @@
     ```c
     uvmunmap(pagetable, 0, PGROUNDUP(sz)/PGSIZE, 0); // 将这一行解注释掉
     ```
+
+7. 运行qemu，命令行输入usertests，发现测试点sbrkbugs、kernmem、sbrkfail、stacktest没过
