@@ -43,12 +43,23 @@ sys_sbrk(void)
 {
   int addr;
   int n;
+  struct proc* p = myproc();
 
   if(argint(0, &n) < 0)
     return -1;
-  addr = myproc()->sz;
+  addr = p->sz;
+
+  /* if(addr+n >= PLIC)
+    panic("sys_sbrk"); */
+
   if(growproc(n) < 0)
     return -1;
+
+  if(n > 0)
+    kvmcopymap(p->pagetable, p->k_pagetable, addr, n);
+  else
+    if(PGROUNDUP(addr+n) < PGROUNDUP(addr))
+      uvmunmap(p->k_pagetable, PGROUNDUP(addr+n), (PGROUNDUP(addr)-PGROUNDUP(addr+n))/ PGSIZE, 0);
   return addr;
 }
 

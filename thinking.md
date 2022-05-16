@@ -259,3 +259,216 @@
         return pa+off;
     }
     ```
+
+## Simplify copyin/copyinstr
+
+1. 在`kernel/def.h`增加以下字段：
+
+    ```c
+    // vmcopyin.c
+    int             copyin_new(pagetable_t, char*, uint64, uint64);
+    int             copyinstr_new(pagetable_t, char*, uint64, uint64);
+    ```
+
+    更改`kernel/vm.c`中`copyin`和`copyinstr`函数实现：
+
+    ```c
+    int
+    copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
+    {
+        return copyin_new(pagetable, dst, srcva, len);
+    }
+
+    int
+    copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
+    {
+        return copyinstr_new(pagetable, dst, srcva, max);
+    }
+    ```
+
+2. 在`kernel/vm.c`中定义`kvmcopymap`函数并在`kernel/def.h`中声明：
+
+    ```c
+    void kvmcopymap(pagetable_t pagetable, pagetable_t k_pagetable, uint64 start, uint64 sz) {
+        pte_t* pte, *k_pte;
+
+        for(int i = start; i<start+sz; i+= PGSIZE) {
+            pte = walk(pagetable, i, 0);
+            if(!pte)
+            panic("kvmcopymap");
+            k_pte = walk(k_pagetable, i, 1);
+            *k_pte = (*pte) & ~PTE_U;
+        }
+    }
+    ```
+
+    ```c
+    void            kvmcopymap(pagetable_t, pagetable_t, uint64, uint64);
+    ```
+
+3. 在`kernel/proc.c`的`userinit`函数和`fork`函数中增加以下字段：
+
+    ```c
+    // Set up first user process.
+    void
+    userinit(void)
+    {
+        struct proc *p;
+
+        p = allocproc();
+        initproc = p;
+        
+        // allocate one user page and copy init's instructions
+        // and data into it.
+        uvminit(p->pagetable, initcode, sizeof(initcode));
+        p->sz = PGSIZE;
+
+        kvmcopymap(p->pagetable, p->k_pagetable, 0, PGSIZE); // ←←←←←←←←
+
+        // prepare for the very first "return" from kernel to user.
+        p->trapframe->epc = 0;      // user program counter
+        p->trapframe->sp = PGSIZE;  // user stack pointer
+
+        safestrcpy(p->name, "initcode", sizeof(p->name));
+        p->cwd = namei("/");
+
+        p->state = RUNNABLE;
+
+        release(&p->lock);
+    }
+    ```
+
+    ```c
+    // Create a new process, copying the parent.
+    // Sets up child kernel stack to return as if from fork() system call.
+    int
+    fork(void)
+    {
+        int i, pid;
+        struct proc *np;
+        struct proc *p = myproc();
+
+        // Allocate process.
+        if((np = allocproc()) == 0){
+            return -1;
+        }
+
+        // Copy user memory from parent to child.
+        if(uvmcopy(p->pagetable, np->pagetable, p->sz) < 0){
+            freeproc(np);
+            release(&np->lock);
+            return -1;
+        }
+        np->sz = p->sz;
+
+        np->parent = p;
+
+        kvmcopymap(np->pagetable, np->k_pagetable, 0, np->sz); // ←←←←←←←←
+
+        // copy saved user registers.
+        *(np->trapframe) = *(p->trapframe);
+
+        // Cause fork to return 0 in the child.
+        np->trapframe->a0 = 0;
+
+        // increment reference counts on open file descriptors.
+        for(i = 0; i < NOFILE; i++)
+            if(p->ofile[i])
+            np->ofile[i] = filedup(p->ofile[i]);
+        np->cwd = idup(p->cwd);
+
+        safestrcpy(np->name, p->name, sizeof(p->name));
+
+        pid = np->pid;
+
+        np->state = RUNNABLE;
+
+        release(&np->lock);
+
+        return pid;
+    }
+    ```
+
+4. 在`kernel/exec.c`，`exec`函数中增加以下字段：
+
+    ```c
+    sz = PGROUNDUP(sz);
+    uint64 sz1;
+    if((sz1 = uvmalloc(pagetable, sz, sz + 2*PGSIZE)) == 0)
+        goto bad;
+    // ↓↓↓↓↓↓↓↓
+    if(sz1 >= PLIC)
+        goto bad;
+    // ↑↑↑↑↑↑↑↑
+    sz = sz1;
+    uvmclear(pagetable, sz-2*PGSIZE);
+    ```
+
+    ```c
+    sz = PGROUNDUP(sz);
+    uint64 sz1;
+    if((sz1 = uvmalloc(pagetable, sz, sz + 2*PGSIZE)) == 0)
+        goto bad;
+    // ↓↓↓↓↓↓↓↓
+    if(sz1 >= PLIC)
+        goto bad;
+    // ↑↑↑↑↑↑↑↑
+    sz = sz1;
+    uvmclear(pagetable, sz-2*PGSIZE);
+    sp = sz;
+    stackbase = sp - PGSIZE;
+    ```
+
+    ```c
+    sp -= (argc+1) * sizeof(uint64);
+    sp -= sp % 16;
+    if(sp < stackbase)
+        goto bad;
+    if(copyout(pagetable, sp, (char *)ustack, (argc+1)*sizeof(uint64)) < 0)
+        goto bad;
+
+    // ↓↓↓↓↓↓↓↓
+    uvmunmap(p->k_pagetable, 0, PGROUNDUP(oldsz)/PGSIZE, 0);
+    kvmcopymap(pagetable, p->k_pagetable, 0, sz);
+    // ↑↑↑↑↑↑↑↑
+
+    // arguments to user main(argc, argv)
+    // argc is returned via the system call return
+    // value, which goes in a0.
+    p->trapframe->a1 = sp;
+    ```
+
+5. 更改`kernel/sysproc.c`中的`sys_sbrk`函数：
+
+    ```c
+    uint64
+    sys_sbrk(void)
+    {
+        int addr;
+        int n;
+        struct proc* p = myproc();
+
+        if(argint(0, &n) < 0)
+            return -1;
+        addr = p->sz;
+
+        if(addr+n >= PLIC)
+            panic("sys_sbrk");
+
+        if(growproc(n) < 0)
+            return -1;
+
+        if(n > 0)
+            kvmcopymap(p->pagetable, p->k_pagetable, addr, n);
+        else
+            if(PGROUNDUP(addr+n) < PGROUNDUP(addr))
+            uvmunmap(p->k_pagetable, PGROUNDUP(addr+n), (PGROUNDUP(addr)-PGROUNDUP(addr+n))/ PGSIZE, 0);
+        return addr;
+    }
+    ```
+
+6. 修改kernel/proc.c中的freeproc函数：
+
+    ```c
+    uvmunmap(pagetable, 0, PGROUNDUP(sz)/PGSIZE, 0); // 将这一行解注释掉
+    ```
