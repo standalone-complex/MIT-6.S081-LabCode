@@ -134,7 +134,7 @@ printfinit(void)
 }
 
 void
-backstrace(void) {
+backtrace(void) {
   uint64 fp = r_fp();
   uint64 end = PGROUNDUP(fp); // end >= fp
 

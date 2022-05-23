@@ -8,7 +8,7 @@
 
 ## Backtrace(moderate)
 
-1. 在`kernel/defs.h`中添加函数声明`void backstrace(void)`
+1. 在`kernel/defs.h`中添加函数声明`void backtrace(void)`
 
 2. 在`kernel/riscv.h`中添加以下字段：
 
@@ -23,15 +23,15 @@
     }
     ```
 
-3. 在`kernel/printf.h`中定义`backstrace`函数：
+3. 在`kernel/printf.h`中定义`backtrace`函数：
 
     ```c
     void
-    backstrace(void) {
+    backtrace(void) {
         uint64 fp = r_fp();
         uint64 end = PGROUNDUP(fp); // end >= fp
 
-        printf("backstarce:\n");
+        printf("backtrace:\n");
 
         while(fp != end) {
             printf("%p\n", *(uint64*)((char*)fp-8));
@@ -49,7 +49,7 @@
         int n;
         uint ticks0;
 
-        backstrace(); // ←←←←←←←←
+        backtrace(); // ←←←←←←←←
 
         if(argint(0, &n) < 0)
             return -1;
