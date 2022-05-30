@@ -43,14 +43,26 @@ sys_sbrk(void)
 {
   int addr;
   int n;
+  uint64 newaddr;
 
   if(argint(0, &n) < 0)
     return -1;
   addr = myproc()->sz;
-  /* if(growproc(n) < 0)
-    return -1; */
+  newaddr = myproc()->sz + n;
+
+  if(newaddr >= MAXVA)
+  return addr;
+
+  if(n < 0) {
+    if(newaddr > addr) {
+      newaddr = 0;
+      uvmunmap(myproc()->pagetable, 0, PGROUNDUP(addr)/PGSIZE, 1);
+    } else
+      uvmunmap(myproc()->pagetable, PGROUNDUP(newaddr), (PGROUNDUP(addr)-PGROUNDUP(newaddr))/ PGSIZE, 1);
+  }
+
   myproc()->sz += n;
-  
+
   return addr;
 }
 
