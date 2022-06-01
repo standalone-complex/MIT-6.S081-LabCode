@@ -14,6 +14,8 @@ void freerange(void *pa_start, void *pa_end);
 extern char end[]; // first address after kernel.
                    // defined by kernel.ld.
 
+int ref_count[(PHYSTOP-KERNBASE)/PGSIZE];
+
 struct run {
   struct run *next;
 };
@@ -35,8 +37,19 @@ freerange(void *pa_start, void *pa_end)
 {
   char *p;
   p = (char*)PGROUNDUP((uint64)pa_start);
-  for(; p + PGSIZE <= (char*)pa_end; p += PGSIZE)
+  for(; p + PGSIZE <= (char*)pa_end; p += PGSIZE) {
+    ref_count[((uint64)p-KERNBASE)/PGSIZE]++;
     kfree(p);
+    //ref_count[((uint64)p-KERNBASE)/PGSIZE]--;
+  }
+}
+
+void inc_ref(uint64 pa) {
+  acquire(&kmem.lock);
+  if(pa>=PHYSTOP || !ref_count[((uint64)pa-KERNBASE)/PGSIZE])
+    panic("inc_ref");
+  ref_count[((uint64)pa-KERNBASE)/PGSIZE]++;
+  release(&kmem.lock);
 }
 
 // Free the page of physical memory pointed at by v,
@@ -46,10 +59,20 @@ freerange(void *pa_start, void *pa_end)
 void
 kfree(void *pa)
 {
+  uint64 tmp;
   struct run *r;
 
   if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
     panic("kfree");
+
+  acquire(&kmem.lock);
+  if(!ref_count[((uint64)pa-KERNBASE)/PGSIZE])
+    panic("kfree ref");
+  tmp = --ref_count[((uint64)pa-KERNBASE)/PGSIZE];
+  release(&kmem.lock);
+
+  if(tmp > 0)
+    return;
 
   // Fill with junk to catch dangling refs.
   memset(pa, 1, PGSIZE);
@@ -72,8 +95,12 @@ kalloc(void)
 
   acquire(&kmem.lock);
   r = kmem.freelist;
-  if(r)
+  if(r) {
     kmem.freelist = r->next;
+    if(ref_count[((uint64)r-KERNBASE)/PGSIZE])
+      panic("kalloc ref");
+    ref_count[((uint64)r-KERNBASE)/PGSIZE]++;
+  }
   release(&kmem.lock);
 
   if(r)
