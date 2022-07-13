@@ -33,3 +33,5 @@
     #include "kernel/riscv.h"
     #include "kernel/proc.h"
     ```
+
+## Using threads(moderate)
