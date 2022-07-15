@@ -111,7 +111,24 @@
     } bcache;
     ```
 
-3. 修改函数`binit`：
+3. 增加结构体buf字段：
+
+    ```c
+    struct buf {
+        int valid;   // has data been read from disk?
+        int disk;    // does disk "own" buf?
+        uint dev;
+        uint blockno;
+        struct sleeplock lock;
+        uint refcnt;
+        struct buf *prev; // LRU cache list
+        struct buf *next;
+        uchar data[BSIZE];
+        uint tick;  // add here!
+    };
+    ```
+
+4. 修改函数`binit`：
 
     ```c
     void
@@ -141,7 +158,7 @@
     }
     ```
 
-4. 修改函数bget：
+5. 修改函数bget：
 
     ```c
     static struct buf*
@@ -219,7 +236,7 @@
     }
     ```
 
-5. 修改函数brelse：
+6. 修改函数brelse：
 
     ```c
     void
@@ -240,7 +257,7 @@
     }
     ```
 
-6. 修改函数bpin、bunpin：
+7. 修改函数bpin、bunpin：
 
     ```c
     void
