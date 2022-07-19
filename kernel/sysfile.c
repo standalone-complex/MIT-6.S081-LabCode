@@ -291,6 +291,7 @@ sys_open(void)
   struct file *f;
   struct inode *ip;
   int n;
+  int depth = 0;
 
   if((n = argstr(0, path, MAXPATH)) < 0 || argint(1, &omode) < 0)
     return -1;
@@ -309,6 +310,24 @@ sys_open(void)
       return -1;
     }
     ilock(ip);
+
+    while(ip->type==T_SYMLINK && !(omode&O_NOFOLLOW) && depth<MAXFOLLOWDEPTH) {
+      readi(ip, 0, (uint64)path, 0, MAXPATH);
+      iunlockput(ip);
+      if((ip = namei(path)) == 0) {
+        end_op();
+        return -1;
+      }
+      ilock(ip);
+      ++depth;
+    }
+
+    if(depth == MAXFOLLOWDEPTH) {
+      iunlock(ip);
+      end_op();
+      return -1;
+    }
+
     if(ip->type == T_DIR && omode != O_RDONLY){
       iunlockput(ip);
       end_op();
@@ -482,5 +501,29 @@ sys_pipe(void)
     fileclose(wf);
     return -1;
   }
+  return 0;
+}
+
+uint64 sys_symlink(void) {
+  char target[MAXPATH];
+  char path[MAXPATH];
+  struct inode *ip;
+
+  if(argstr(0, target, MAXPATH) < 0 || argstr(1, path, MAXPATH) < 0)
+    return -1;
+
+  begin_op();
+
+  if((ip = create(path, T_SYMLINK, 0, 0)) == 0) {
+    end_op();
+    return -1;
+  }
+
+  if(writei(ip, 0, (uint64)target, 0, MAXPATH) != MAXPATH)
+    panic("sys_symlink: writei");
+  
+  iunlockput(ip);
+  end_op();
+
   return 0;
 }
