@@ -402,13 +402,13 @@ bmap(struct inode *ip, uint bn)
   }
   bn -= NINDIRECT;
 
-  if(bn < NSECINDIRECT) {
-    if((addr = ip->addrs[NDIRECT+1]) == 0)
+  if(bn < NDINDIRECT) {
+    if(!(addr = ip->addrs[NDIRECT+1]))
       ip->addrs[NDIRECT+1] = addr = balloc(ip->dev);
+    
     bp = bread(ip->dev, addr);
     a = (uint*)bp->data;
-
-    if((addr = a[bn/NINDIRECT]) == 0) {
+    if(!(addr = a[bn/NINDIRECT])) {
       a[bn/NINDIRECT] = addr = balloc(ip->dev);
       log_write(bp);
     }
@@ -416,8 +416,7 @@ bmap(struct inode *ip, uint bn)
 
     bp = bread(ip->dev, addr);
     a = (uint*)bp->data;
-
-    if((addr = a[bn%NINDIRECT]) == 0) {
+    if(!(addr = a[bn%NINDIRECT])) {
       a[bn%NINDIRECT] = addr = balloc(ip->dev);
       log_write(bp);
     }
@@ -457,6 +456,7 @@ itrunc(struct inode *ip)
     ip->addrs[NDIRECT] = 0;
   }
 
+  // double indirect inode is exist?
   if(ip->addrs[NDIRECT+1]) {
     bp = bread(ip->dev, ip->addrs[NDIRECT+1]);
     a = (uint*)bp->data;
@@ -464,12 +464,12 @@ itrunc(struct inode *ip)
     for(i = 0; i < NINDIRECT; ++i) {
       if(a[i]) {
         bp2 = bread(ip->dev, a[i]);
-        a2 = (uint*)bp->data;
+        a2 = (uint*)bp2->data;
 
         for(j = 0; j < NINDIRECT; ++j)
+        // block is exist?
           if(a2[j])
             bfree(ip->dev, a2[j]);
-        
         brelse(bp2);
         bfree(ip->dev, a[i]);
       }
