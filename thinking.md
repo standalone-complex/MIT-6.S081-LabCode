@@ -233,3 +233,14 @@
     ```
 
 8. 根据编译器提示增加头文件
+
+    ```c
+    // proc.c
+    #include "fcntl.h"
+
+    // trap.c
+    #include "sleeplock.h"
+    #include "fs.h"
+    #include "file.h"
+    #include "fcntl.h"
+    ```
