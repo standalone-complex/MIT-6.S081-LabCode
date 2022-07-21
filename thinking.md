@@ -2,7 +2,7 @@
 
 ## your job
 
-1. 填写函数e1000_transmit、e1000_recv：
+1. 填写函数`e1000_transmit`、`e1000_recv`：
 
     ```c
     int
